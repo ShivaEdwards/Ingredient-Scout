@@ -1,0 +1,5 @@
+{
+  "name": "Ingredient Scout",
+  "description": "Scan grocery ingredient lists to identify harmful chemicals and health risks for babies, kids, and adults.",
+  "requestFramePermissions": ["camera"]
+}
