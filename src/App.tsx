@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Scan, ShieldCheck, Info, Loader2, History as HistoryIcon, Trash2, ChevronRight, Users, Plus, User, AlertTriangle, X, RefreshCw } from 'lucide-react';
+import { Scan, ShieldCheck, Info, Loader2, History as HistoryIcon, Trash2, ChevronRight, Users, Plus, User, AlertTriangle, X, RefreshCw, ArrowLeft } from 'lucide-react';
 import { ImageScanner } from './components/ImageScanner';
 import { AnalysisResults } from './components/AnalysisResults';
 import { analyzeIngredients, IngredientAnalysis, FamilyProfile } from './services/gemini';
@@ -17,6 +17,7 @@ export default function App() {
   const [history, setHistory] = useState<IngredientAnalysis[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showProfiles, setShowProfiles] = useState(false);
+  const [isViewingHistoryResult, setIsViewingHistoryResult] = useState(false);
   const [scanCache, setScanCache] = useState<Record<string, IngredientAnalysis>>({});
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
   const [lastInput, setLastInput] = useState<{ base64Image?: string; manualText?: string } | null>(null);
@@ -71,6 +72,7 @@ export default function App() {
     setIsProcessing(true);
     setError(null);
     setProfilesChanged(false);
+    setIsViewingHistoryResult(false);
     if (!isAutoUpdate) setAnalysis(null);
     setLastInput(input);
     
@@ -334,7 +336,15 @@ export default function App() {
               className="space-y-6"
             >
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-display font-bold text-slate-900">Scan History</h2>
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => setShowHistory(false)}
+                    className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
+                  >
+                    <ArrowLeft size={24} />
+                  </button>
+                  <h2 className="text-2xl font-display font-bold text-slate-900">Scan History</h2>
+                </div>
                 {history.length > 0 && (
                   <button 
                     onClick={clearHistory}
@@ -365,6 +375,7 @@ export default function App() {
                       onClick={() => {
                         setAnalysis(item);
                         setShowHistory(false);
+                        setIsViewingHistoryResult(true);
                       }}
                       className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:border-emerald-200 hover:shadow-md transition-all text-left flex items-center justify-between group"
                     >
@@ -388,41 +399,43 @@ export default function App() {
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
               {/* Left Column: Scanner */}
-              <div className="lg:col-span-5 space-y-8">
-                <section>
-                  <div className="mb-6">
-                    <h2 className="text-3xl font-display font-bold text-slate-900">
-                      Safety Check
-                    </h2>
-                    <p className="text-slate-500 mt-2">
-                      Scan a label, select from gallery, or type ingredients manually.
-                    </p>
-                  </div>
-
-                  <ImageScanner 
-                    onImageCaptured={(base64) => handleAnalysis({ base64Image: base64 })}
-                    onManualTextSubmit={(text) => handleAnalysis({ manualText: text })}
-                    isProcessing={isProcessing} 
-                  />
-                </section>
-
-                <section className="bg-emerald-900 rounded-[2rem] p-8 text-white shadow-xl shadow-emerald-900/20">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-white/10 rounded-2xl">
-                      <ShieldCheck size={32} className="text-emerald-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-display font-bold">Smart Protection</h3>
-                      <p className="mt-2 text-emerald-100/70 text-sm leading-relaxed">
-                        Our AI cross-references ingredients with global health databases to ensure your family's safety.
+              {!isViewingHistoryResult && (
+                <div className="lg:col-span-5 space-y-8">
+                  <section>
+                    <div className="mb-6">
+                      <h2 className="text-3xl font-display font-bold text-slate-900">
+                        Safety Check
+                      </h2>
+                      <p className="text-slate-500 mt-2">
+                        Scan a label, select from gallery, or type ingredients manually.
                       </p>
                     </div>
-                  </div>
-                </section>
-              </div>
+
+                    <ImageScanner 
+                      onImageCaptured={(base64) => handleAnalysis({ base64Image: base64 })}
+                      onManualTextSubmit={(text) => handleAnalysis({ manualText: text })}
+                      isProcessing={isProcessing} 
+                    />
+                  </section>
+
+                  <section className="bg-emerald-900 rounded-[2rem] p-8 text-white shadow-xl shadow-emerald-900/20">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 bg-white/10 rounded-2xl">
+                        <ShieldCheck size={32} className="text-emerald-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-display font-bold">Smart Protection</h3>
+                        <p className="mt-2 text-emerald-100/70 text-sm leading-relaxed">
+                          Our AI cross-references ingredients with global health databases to ensure your family's safety.
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              )}
 
               {/* Right Column: Results */}
-              <div className="lg:col-span-7 relative" ref={resultsRef}>
+              <div className={cn(isViewingHistoryResult ? "lg:col-span-12" : "lg:col-span-7", "relative")} ref={resultsRef}>
                 <AnimatePresence>
                   {isProcessing && analysis && (
                     <motion.div 
@@ -471,7 +484,15 @@ export default function App() {
                       </button>
                     </motion.div>
                   ) : analysis ? (
-                    <AnalysisResults key="results" analysis={analysis} />
+                    <AnalysisResults 
+                      key="results" 
+                      analysis={analysis} 
+                      hasProfiles={profiles.length > 0}
+                      onBack={isViewingHistoryResult ? () => {
+                        setIsViewingHistoryResult(false);
+                        setShowHistory(true);
+                      } : undefined}
+                    />
                   ) : (
                     <motion.div
                       key="empty"

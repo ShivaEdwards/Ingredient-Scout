@@ -1,14 +1,16 @@
 import React from 'react';
-import { AlertCircle, CheckCircle2, Info, Baby, User, Users, Share2, ShieldAlert, ShieldCheck, HelpCircle, AlertTriangle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Info, Baby, User, Users, Share2, ShieldAlert, ShieldCheck, HelpCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { IngredientAnalysis } from '../services/gemini';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 
 interface AnalysisResultsProps {
   analysis: IngredientAnalysis;
+  hasProfiles?: boolean;
+  onBack?: () => void;
 }
 
-export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ analysis }) => {
+export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ analysis, hasProfiles = false, onBack }) => {
   const getRiskColor = (level: string) => {
     switch (level) {
       case 'High': return 'text-red-600 bg-red-50 border-red-100';
@@ -81,13 +83,24 @@ export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ analysis }) =>
     >
       {/* Header */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-display font-bold text-slate-900">
-            {analysis.productName || "Product Analysis"}
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            {analysis.ingredients.length} ingredients identified
-          </p>
+        <div className="flex items-center gap-4">
+          {onBack && (
+            <button 
+              onClick={onBack}
+              className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
+              title="Go Back"
+            >
+              <ArrowLeft size={24} />
+            </button>
+          )}
+          <div>
+            <h2 className="text-2xl font-display font-bold text-slate-900">
+              {analysis.productName || "Product Analysis"}
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              {analysis.ingredients.length} ingredients identified
+            </p>
+          </div>
         </div>
         <button
           onClick={handleShare}
@@ -99,7 +112,7 @@ export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ analysis }) =>
       </div>
 
       {/* Family Alerts */}
-      {analysis.familyAlerts && analysis.familyAlerts.length > 0 && (
+      {hasProfiles && analysis.familyAlerts && analysis.familyAlerts.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
