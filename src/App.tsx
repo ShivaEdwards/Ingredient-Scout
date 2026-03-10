@@ -59,13 +59,24 @@ export default function App() {
   }, [analysis]);
 
   const handleAnalysis = async (input: { base64Image?: string; manualText?: string }, isAutoUpdate = false) => {
-    const cacheKey = input.base64Image 
-      ? input.base64Image.substring(0, 1000) 
-      : input.manualText?.substring(0, 100);
+    // Better cache key: Full text for manual, or a larger chunk of base64 for images
+    const cacheKey = input.manualText 
+      ? `text_${input.manualText.trim()}`
+      : input.base64Image 
+        ? `img_${input.base64Image.substring(0, 5000)}` 
+        : null;
 
     if (cacheKey && scanCache[cacheKey] && !isAutoUpdate) {
-      setAnalysis(scanCache[cacheKey]);
+      const cachedResult = scanCache[cacheKey];
+      setAnalysis(cachedResult);
       setShowHistory(false);
+      setIsViewingHistoryResult(false);
+      
+      // Move to top of history if it exists
+      setHistory(prev => {
+        const filtered = prev.filter(item => item.productName !== cachedResult.productName);
+        return [cachedResult, ...filtered];
+      });
       return;
     }
 
@@ -94,7 +105,11 @@ export default function App() {
       }
       
       setHistory(prev => {
-        const filtered = prev.filter(item => item.productName !== result.productName);
+        // Check if this product (by name) is already in history
+        // We filter it out first to ensure the "newest" version (this one) is at the top
+        const filtered = prev.filter(item => 
+          item.productName.toLowerCase().trim() !== result.productName.toLowerCase().trim()
+        );
         return [result, ...filtered.slice(0, 19)];
       });
       if (!isAutoUpdate) setShowHistory(false);
