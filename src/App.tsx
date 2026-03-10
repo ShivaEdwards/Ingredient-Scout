@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Scan, ShieldCheck, Info, Loader2, History as HistoryIcon, Trash2, ChevronRight, Users, Plus, User, AlertTriangle, X } from 'lucide-react';
+import { Scan, ShieldCheck, Info, Loader2, History as HistoryIcon, Trash2, ChevronRight, Users, Plus, User, AlertTriangle, X, RefreshCw } from 'lucide-react';
 import { ImageScanner } from './components/ImageScanner';
 import { AnalysisResults } from './components/AnalysisResults';
 import { analyzeIngredients, IngredientAnalysis, FamilyProfile } from './services/gemini';
@@ -20,6 +20,7 @@ export default function App() {
   const [scanCache, setScanCache] = useState<Record<string, IngredientAnalysis>>({});
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
   const [lastInput, setLastInput] = useState<{ base64Image?: string; manualText?: string } | null>(null);
+  const [profilesChanged, setProfilesChanged] = useState(false);
   const [devMenuVisible, setDevMenuVisible] = useState(false);
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [localStats, setLocalStats] = useState({ totalScans: 0, successfulScans: 0, failedScans: 0, lastResponseTime: 0 });
@@ -69,6 +70,7 @@ export default function App() {
 
     setIsProcessing(true);
     setError(null);
+    setProfilesChanged(false);
     if (!isAutoUpdate) setAnalysis(null);
     setLastInput(input);
     
@@ -118,7 +120,8 @@ export default function App() {
     setTimeout(() => setLogoTapCount(0), 2000);
   };
 
-  // Auto-update analysis when profiles change
+  // Auto-update analysis when profiles change - REMOVED for manual trigger
+  /*
   useEffect(() => {
     if (analysis && lastInput) {
       const timer = setTimeout(() => {
@@ -127,6 +130,7 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [profiles]);
+  */
 
   const addProfile = () => {
     const newProfile: FamilyProfile = {
@@ -137,14 +141,24 @@ export default function App() {
       concerns: ""
     };
     setProfiles([...profiles, newProfile]);
+    setProfilesChanged(true);
   };
 
   const updateProfile = (id: string, updates: Partial<FamilyProfile>) => {
     setProfiles(profiles.map(p => p.id === id ? { ...p, ...updates } : p));
+    setProfilesChanged(true);
   };
 
   const deleteProfile = (id: string) => {
     setProfiles(profiles.filter(p => p.id !== id));
+    setProfilesChanged(true);
+  };
+
+  const handleManualProfileUpdate = () => {
+    if (analysis && lastInput) {
+      handleAnalysis(lastInput, true);
+    }
+    setProfilesChanged(false);
   };
 
   const clearHistory = () => {
@@ -221,6 +235,29 @@ export default function App() {
                     Add Member
                   </button>
                 </div>
+
+                {profilesChanged && analysis && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-6 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-between gap-4"
+                  >
+                    <div className="flex items-center gap-3 text-emerald-800 text-sm font-medium">
+                      <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
+                        <RefreshCw size={16} className="animate-spin-slow" />
+                      </div>
+                      Profiles updated. Refresh analysis to see new alerts?
+                    </div>
+                    <button 
+                      onClick={handleManualProfileUpdate}
+                      disabled={isProcessing}
+                      className="px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-md shadow-emerald-600/20 flex items-center gap-2 whitespace-nowrap"
+                    >
+                      {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                      Update Results
+                    </button>
+                  </motion.div>
+                )}
 
                 {profiles.length === 0 ? (
                   <div className="text-center py-8 text-slate-400">

@@ -6,6 +6,43 @@
   --font-display: "Outfit", sans-serif;
 }
 
+/* Custom styles for react-image-crop */
+.ReactCrop {
+  display: flex !important;
+  justify-content: center;
+  align-items: center;
+}
+
+.ReactCrop__crop-selection {
+  border: 2px solid #10b981 !important; /* emerald-500 */
+  background-color: rgba(16, 185, 129, 0.05); /* Very light emerald tint */
+}
+
+.ReactCrop__handle {
+  width: 32px !important;
+  height: 32px !important;
+  background-color: #10b981 !important;
+  border: 3px solid white !important;
+  border-radius: 50% !important;
+  opacity: 1 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3) !important;
+  z-index: 100 !important;
+}
+
+/* Ensure handles are touchable */
+.ReactCrop__handle:active {
+  transform: scale(1.2);
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }

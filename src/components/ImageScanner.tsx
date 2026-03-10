@@ -1,10 +1,13 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Camera, Upload, X, RefreshCw, Check, Crop as CropIcon, Image as ImageIcon, Type as TypeIcon, Scan as ScanIcon } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
-import ReactCrop, { centerCrop, makeAspectCrop, Crop, PixelCrop } from 'react-image-crop';
-import 'react-image-crop/dist/ReactCrop.css';
 import { cn } from '../lib/utils';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
+
+interface Point {
+  x: number;
+  y: number;
+}
 
 interface ImageScannerProps {
   onImageCaptured: (base64: string) => void;
@@ -16,10 +19,18 @@ export const ImageScanner: React.FC<ImageScannerProps> = ({ onImageCaptured, onM
   const [mode, setMode] = useState<'upload' | 'camera' | 'crop' | 'manual'>('upload');
   const [preview, setPreview] = useState<string | null>(null);
   const [cropImage, setCropImage] = useState<string | null>(null);
-  const [crop, setCrop] = useState<Crop>();
-  const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [manualText, setManualText] = useState('');
   
+  // 4 corners in percentages (0-100)
+  const [corners, setCorners] = useState<Point[]>([
+    { x: 10, y: 10 }, // TL
+    { x: 90, y: 10 }, // TR
+    { x: 90, y: 90 }, // BR
+    { x: 10, y: 90 }, // BL
+  ]);
+  const [activeCorner, setActiveCorner] = useState<number | null>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -32,6 +43,13 @@ export const ImageScanner: React.FC<ImageScannerProps> = ({ onImageCaptured, onM
         const base64 = reader.result as string;
         setCropImage(base64);
         setMode('crop');
+        // Reset corners to default rectangle
+        setCorners([
+          { x: 15, y: 15 },
+          { x: 85, y: 15 },
+          { x: 85, y: 85 },
+          { x: 15, y: 85 },
+        ]);
       };
       reader.readAsDataURL(file);
     }
@@ -41,7 +59,7 @@ export const ImageScanner: React.FC<ImageScannerProps> = ({ onImageCaptured, onM
     onDrop,
     accept: { 'image/*': [] },
     multiple: false,
-    noClick: true, // We will trigger manually via the "Gallery" button
+    noClick: true,
     disabled: isProcessing
   });
 
@@ -78,6 +96,12 @@ export const ImageScanner: React.FC<ImageScannerProps> = ({ onImageCaptured, onM
         stopCamera();
         setCropImage(base64);
         setMode('crop');
+        setCorners([
+          { x: 15, y: 15 },
+          { x: 85, y: 15 },
+          { x: 85, y: 85 },
+          { x: 15, y: 85 },
+        ]);
       }
     }
   };
@@ -87,44 +111,68 @@ export const ImageScanner: React.FC<ImageScannerProps> = ({ onImageCaptured, onM
     setMode('upload');
   };
 
-  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const { width, height } = e.currentTarget;
-    const initialCrop = centerCrop(
-      makeAspectCrop(
-        { unit: '%', width: 90 },
-        undefined as any,
-        width,
-        height
-      ),
-      width,
-      height
-    );
-    setCrop(initialCrop);
+  const handlePointerDown = (index: number, e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setActiveCorner(index);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (activeCorner === null || !containerRef.current) return;
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    
+    // Calculate position relative to the container
+    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+    
+    const newCorners = [...corners];
+    newCorners[activeCorner] = { x, y };
+    setCorners(newCorners);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (activeCorner !== null) {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      setActiveCorner(null);
+    }
   };
 
   const getCroppedImg = async () => {
-    if (!imgRef.current || !completedCrop) return;
+    if (!imgRef.current) return;
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const scaleX = imgRef.current.naturalWidth / imgRef.current.width;
-    const scaleY = imgRef.current.naturalHeight / imgRef.current.height;
+    // Find bounding box of the 4 corners
+    const minX = Math.min(...corners.map(c => c.x)) / 100;
+    const minY = Math.min(...corners.map(c => c.y)) / 100;
+    const maxX = Math.max(...corners.map(c => c.x)) / 100;
+    const maxY = Math.max(...corners.map(c => c.y)) / 100;
 
-    canvas.width = completedCrop.width * scaleX;
-    canvas.height = completedCrop.height * scaleY;
+    const naturalWidth = imgRef.current.naturalWidth;
+    const naturalHeight = imgRef.current.naturalHeight;
+
+    const cropX = minX * naturalWidth;
+    const cropY = minY * naturalHeight;
+    const cropWidth = (maxX - minX) * naturalWidth;
+    const cropHeight = (maxY - minY) * naturalHeight;
+
+    canvas.width = cropWidth;
+    canvas.height = cropHeight;
 
     ctx.drawImage(
       imgRef.current,
-      completedCrop.x * scaleX,
-      completedCrop.y * scaleY,
-      completedCrop.width * scaleX,
-      completedCrop.height * scaleY,
+      cropX,
+      cropY,
+      cropWidth,
+      cropHeight,
       0,
       0,
-      canvas.width,
-      canvas.height
+      cropWidth,
+      cropHeight
     );
 
     const base64 = canvas.toDataURL('image/jpeg');
@@ -141,6 +189,14 @@ export const ImageScanner: React.FC<ImageScannerProps> = ({ onImageCaptured, onM
       setMode('upload');
       setManualText('');
     }
+  };
+
+  // SVG Path for the semi-transparent overlay with a hole
+  const getOverlayPath = () => {
+    if (!corners.length) return "";
+    const c = corners;
+    // Outer rectangle (clockwise) + Inner quadrilateral (counter-clockwise) to create a hole
+    return `M 0 0 H 100 V 100 H 0 Z M ${c[0].x} ${c[0].y} L ${c[3].x} ${c[3].y} L ${c[2].x} ${c[2].y} L ${c[1].x} ${c[1].y} Z`;
   };
 
   return (
@@ -260,11 +316,11 @@ export const ImageScanner: React.FC<ImageScannerProps> = ({ onImageCaptured, onM
       )}
 
       {mode === 'crop' && cropImage && (
-        <div className="relative bg-slate-100 rounded-3xl overflow-hidden flex flex-col max-h-[600px] shadow-xl border border-slate-200">
-          <div className="p-4 bg-white border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-slate-600 font-medium">
-              <CropIcon size={18} />
-              <span>Set all four corners</span>
+        <div className="relative bg-slate-900 rounded-3xl overflow-hidden flex flex-col h-[80vh] max-h-[700px] shadow-2xl border border-slate-800">
+          <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between z-20">
+            <div className="flex items-center gap-2 text-slate-300 font-medium">
+              <CropIcon size={18} className="text-emerald-500" />
+              <span className="text-sm">Adjust corners to fit label</span>
             </div>
             <div className="flex gap-2">
               <button
@@ -272,44 +328,91 @@ export const ImageScanner: React.FC<ImageScannerProps> = ({ onImageCaptured, onM
                   setMode('upload');
                   setCropImage(null);
                 }}
-                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors text-sm font-medium"
+                className="px-4 py-2 text-slate-400 hover:text-white transition-colors text-sm font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={getCroppedImg}
-                className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 text-sm font-bold shadow-md shadow-emerald-600/20"
+                className="px-6 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all flex items-center gap-2 text-sm font-bold shadow-lg shadow-emerald-600/20"
               >
                 <Check size={18} />
-                Analyze
+                Done
               </button>
             </div>
           </div>
           
-          <div className="relative flex-grow overflow-auto p-4 flex items-center justify-center bg-slate-200 min-h-[400px]">
-            <ReactCrop
-              crop={crop}
-              onChange={(c) => setCrop(c)}
-              onComplete={(c) => setCompletedCrop(c)}
-              className="max-w-full"
-              minWidth={50}
-              minHeight={50}
-              keepSelection
+          <div className="relative flex-grow bg-slate-950 flex items-center justify-center p-4 overflow-hidden">
+            <div 
+              ref={containerRef}
+              className="relative inline-block max-w-full max-h-full"
             >
               <img
                 ref={imgRef}
                 src={cropImage}
-                onLoad={onImageLoad}
                 alt="Crop source"
-                className="max-w-full max-h-[70vh] object-contain select-none"
+                className="max-w-full max-h-[60vh] object-contain select-none pointer-events-none"
                 referrerPolicy="no-referrer"
-                draggable={false}
               />
-            </ReactCrop>
+              
+              {/* SVG Overlay */}
+              <svg 
+                className="absolute inset-0 w-full h-full pointer-events-none z-10"
+                viewBox="0 0 100 100" 
+                preserveAspectRatio="none"
+              >
+                <path 
+                  d={getOverlayPath()} 
+                  fill="rgba(0,0,0,0.6)" 
+                  fillRule="evenodd"
+                />
+                <path 
+                  d={`M ${corners[0].x} ${corners[0].y} L ${corners[1].x} ${corners[1].y} L ${corners[2].x} ${corners[2].y} L ${corners[3].x} ${corners[3].y} Z`}
+                  fill="transparent"
+                  stroke="#10b981"
+                  strokeWidth="0.5"
+                  strokeDasharray="2,2"
+                />
+              </svg>
+
+              {/* Draggable Corners */}
+              {corners.map((corner, i) => (
+                <div
+                  key={i}
+                  onPointerDown={(e) => handlePointerDown(i, e)}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  className={cn(
+                    "absolute w-12 h-12 -ml-6 -mt-6 flex items-center justify-center z-30 cursor-crosshair touch-none select-none",
+                    activeCorner === i ? "scale-125" : "scale-100"
+                  )}
+                  style={{ 
+                    left: `${corner.x}%`, 
+                    top: `${corner.y}%`,
+                    transition: activeCorner === null ? 'all 0.2s ease-out' : 'none'
+                  }}
+                >
+                  <div className={cn(
+                    "w-8 h-8 rounded-full border-2 border-white shadow-xl flex items-center justify-center transition-colors",
+                    activeCorner === i ? "bg-emerald-400" : "bg-emerald-600"
+                  )}>
+                    <div className="w-2 h-2 bg-white rounded-full" />
+                  </div>
+                  
+                  {/* Magnifier Guide Lines */}
+                  {activeCorner === i && (
+                    <div className="absolute pointer-events-none">
+                      <div className="absolute w-[200vw] h-[1px] bg-emerald-500/30 -left-[100vw]" />
+                      <div className="absolute h-[200vh] w-[1px] bg-emerald-500/30 -top-[100vh]" />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
           
-          <div className="p-3 bg-slate-50 text-center text-xs text-slate-500 italic">
-            Drag the corners to focus on the ingredient list only.
+          <div className="p-4 bg-slate-900/80 backdrop-blur-md text-center text-xs text-slate-400 font-medium border-t border-slate-800">
+            Drag each corner individually to precisely outline the ingredient list.
           </div>
         </div>
       )}
