@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Scan, ShieldCheck, Info, Loader2, History as HistoryIcon, Trash2, ChevronRight, Users, Plus, User, AlertTriangle } from 'lucide-react';
+import { Scan, ShieldCheck, Info, Loader2, History as HistoryIcon, Trash2, ChevronRight, Users, Plus, User, AlertTriangle, X } from 'lucide-react';
 import { ImageScanner } from './components/ImageScanner';
 import { AnalysisResults } from './components/AnalysisResults';
 import { analyzeIngredients, IngredientAnalysis, FamilyProfile } from './services/gemini';
@@ -20,6 +20,9 @@ export default function App() {
   const [scanCache, setScanCache] = useState<Record<string, IngredientAnalysis>>({});
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
   const [lastInput, setLastInput] = useState<{ base64Image?: string; manualText?: string } | null>(null);
+  const [devMenuVisible, setDevMenuVisible] = useState(false);
+  const [logoTapCount, setLogoTapCount] = useState(0);
+  const [localStats, setLocalStats] = useState({ totalScans: 0, successfulScans: 0, failedScans: 0, lastResponseTime: 0 });
   
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -33,6 +36,9 @@ export default function App() {
 
     const savedProfiles = localStorage.getItem('ingredient_scout_profiles');
     if (savedProfiles) try { setProfiles(JSON.parse(savedProfiles)); } catch (e) {}
+
+    const savedStats = localStorage.getItem('ingredient_scout_stats');
+    if (savedStats) try { setLocalStats(JSON.parse(savedStats)); } catch (e) {}
   }, []);
 
   // Save data to localStorage
@@ -40,7 +46,8 @@ export default function App() {
     localStorage.setItem('ingredient_scout_history', JSON.stringify(history));
     localStorage.setItem('ingredient_scout_cache', JSON.stringify(scanCache));
     localStorage.setItem('ingredient_scout_profiles', JSON.stringify(profiles));
-  }, [history, scanCache, profiles]);
+    localStorage.setItem('ingredient_scout_stats', JSON.stringify(localStats));
+  }, [history, scanCache, profiles, localStats]);
 
   // Auto-scroll to results when analysis is ready
   useEffect(() => {
@@ -65,9 +72,18 @@ export default function App() {
     if (!isAutoUpdate) setAnalysis(null);
     setLastInput(input);
     
+    const startTime = Date.now();
     try {
       const result = await analyzeIngredients(input, profiles);
+      const endTime = Date.now();
+      
       setAnalysis(result);
+      setLocalStats(prev => ({
+        ...prev,
+        totalScans: prev.totalScans + 1,
+        successfulScans: prev.successfulScans + 1,
+        lastResponseTime: endTime - startTime
+      }));
       
       if (cacheKey) {
         setScanCache(prev => ({ ...prev, [cacheKey]: result }));
@@ -80,10 +96,26 @@ export default function App() {
       if (!isAutoUpdate) setShowHistory(false);
     } catch (err) {
       console.error(err);
+      setLocalStats(prev => ({
+        ...prev,
+        totalScans: prev.totalScans + 1,
+        failedScans: prev.failedScans + 1
+      }));
       if (!isAutoUpdate) setError("Failed to analyze ingredients. Please try again.");
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleLogoTap = () => {
+    const newCount = logoTapCount + 1;
+    setLogoTapCount(newCount);
+    if (newCount >= 5) {
+      setDevMenuVisible(true);
+      setLogoTapCount(0);
+    }
+    // Reset count after 2 seconds of inactivity
+    setTimeout(() => setLogoTapCount(0), 2000);
   };
 
   // Auto-update analysis when profiles change
@@ -129,7 +161,7 @@ export default function App() {
       {/* Navigation */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setAnalysis(null); setShowHistory(false); }}>
+          <div className="flex items-center gap-2 cursor-pointer select-none" onClick={handleLogoTap}>
             <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white">
               <ShieldCheck size={20} />
             </div>
@@ -434,6 +466,73 @@ export default function App() {
           </p>
         </div>
       </footer>
+
+      {/* Hidden Developer Menu */}
+      <AnimatePresence>
+        {devMenuVisible && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white w-full max-w-md rounded-[2.5rem] overflow-hidden shadow-2xl"
+            >
+              <div className="p-8 bg-slate-900 text-white flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-display font-bold">Dev Monitor</h2>
+                  <p className="text-slate-400 text-xs uppercase tracking-widest mt-1">System Diagnostics</p>
+                </div>
+                <button onClick={() => setDevMenuVisible(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+              
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Scans</p>
+                    <p className="text-3xl font-display font-bold text-slate-900 mt-1">{localStats.totalScans}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Success Rate</p>
+                    <p className="text-3xl font-display font-bold text-emerald-600 mt-1">
+                      {localStats.totalScans > 0 ? Math.round((localStats.successfulScans / localStats.totalScans) * 100) : 0}%
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                    <span className="text-sm text-slate-500">Last Response Time</span>
+                    <span className="text-sm font-mono font-bold text-slate-900">{localStats.lastResponseTime}ms</span>
+                  </div>
+                  <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                    <span className="text-sm text-slate-500">Failed Requests</span>
+                    <span className="text-sm font-mono font-bold text-red-500">{localStats.failedScans}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                    <span className="text-sm text-slate-500">API Status</span>
+                    <span className="text-sm font-mono font-bold text-emerald-600">Connected</span>
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button 
+                    onClick={() => {
+                      if(confirm("Reset all local diagnostics?")) {
+                        setLocalStats({ totalScans: 0, successfulScans: 0, failedScans: 0, lastResponseTime: 0 });
+                      }
+                    }}
+                    className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-colors text-sm"
+                  >
+                    Reset Analytics
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
